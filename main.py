@@ -26,15 +26,8 @@ def sqr_dist(pt1, pt2):
     return (pt1[0] - pt2[0]) ** 2 + (pt1[1] - pt2[1]) ** 2
 
 
-def random_point():
-    while True:
-        pt = (random.uniform(-1, 1), random.uniform(0, 1))
-        if sqr_dist((0, 0), pt) <= 1:
-            return pt
-
-
 def add_end_points(points):
-    return [(-1, 0)] + list(points) + [(1, 0)]
+    return [(-1, 0)] + points + [(1, 0)]
 
 
 def calc_score(points):
@@ -45,26 +38,75 @@ def calc_score(points):
     return score
 
 
+def score_gradient(points):
+    points = add_end_points(points)
+    result = []
+    for i in range(len(points) - 2):
+        pts = points[i:i + 3]
+        result.append(tuple(2 * (x1 - x2) + 2 * (x3 - x2) for x1, x2, x3 in zip(*pts)))
+    return result
+
+
+def regularization_gradient(points):
+    points = add_end_points(points)
+    result = []
+    for i in range(1, len(points) - 1):
+        g = (0, 0)
+        for j in range(len(points)):
+            if i == j:
+                continue
+            d = sqr_dist(points[i], points[j])
+            g = tuple(g[k] + (points[j][k] - points[i][k]) / d for k in range(2))
+        result.append(g)
+    return result
+
+
 def find_path(points):
     best_val = (len(points) + 1) * 100
     best_pts = points
-    for pts in itertools.permutations(points):
+    for pts in map(list, itertools.permutations(points)):
         val = calc_score(pts)
         if val < best_val:
             best_val = val
             best_pts = pts
-    return best_val, best_pts
+    return best_pts, best_val
+
+
+def random_point():
+    while True:
+        pt = (random.uniform(-1, 1), random.uniform(0, 1))
+        if sqr_dist((0, 0), pt) <= 1:
+            return pt
+
+
+def generate_initial_state(k):
+    return [random_point() for i in range(k)]
 
 
 def calc_data():
-    k = 5
-    best_val = 0
+    k = 6
+    step_coef = 0.01
+    regularization_coef = 0.3
+    regularization_coef /= (k ** 0.5)
+    points = generate_initial_state(k)
     while True:
-        points = [random_point() for i in range(k)]
-        val, points = find_path(points)
-        if val > best_val:
-            best_val = val
-            save_points(points)
+        points, val = find_path(points)
+        save_points(points)
+        # gradient = [tuple(
+        #     v1[i] + v2[i] * regularization_coef for i in range(2)
+        # ) for v1, v2 in zip(
+        #     score_gradient(points),
+        #     regularization_gradient(points),
+        # )]
+        gradient = score_gradient(points)
+        for i in range(len(points)):
+            points[i] = tuple(points[i][j] - gradient[i][j] * step_coef for j in range(2))
+            if points[i][1] < 0:
+                points[i] = (points[i][0], 0)
+            d = sqr_dist(points[i], (0, 0))
+            if d > 1:
+                d = d ** 0.5
+                points[i] = tuple(points[i][j] / d for j in range(2))
 
 
 class Canvas(tk.Tk):
@@ -113,7 +155,7 @@ class Canvas(tk.Tk):
 
     def update(self):
         self.draw(load_points())
-        self.after(1000, self.update)
+        self.after(10, self.update)
 
     def run(self):
         calc_thread = threading.Thread(target=calc_data)
